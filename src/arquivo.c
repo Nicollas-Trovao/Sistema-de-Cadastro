@@ -336,5 +336,7 @@ void carregar_arquivo(AppState *state)
             comparar);
     }
 
+    sincronizar_ordem_lista(state);
+
     fclose(f);
 }

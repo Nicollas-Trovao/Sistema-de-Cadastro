@@ -6,6 +6,7 @@
 
 #include "formulario.h"
 
+#include <glib/gstdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -61,6 +62,8 @@ static void on_imagem_response(GtkNativeDialog *dialog, int response_id, gpointe
 static void abrir_camera(GtkButton *button, gpointer data);
 static GtkWindow *obter_janela_principal(FormData *form);
 static void apresentar_janela_principal(FormData *form);
+static GtkWidget *criar_campo_com_contador(GtkWidget *entry, int maximo);
+static void atualizar_contador_campo(GtkEditable *editable, gpointer data);
 static GtkWidget *criar_spin_inteiro(double minimo, double maximo, double passo);
 static GtkWidget *criar_spin_decimal(double minimo, double maximo, double passo, guint digitos);
 static void copiar_texto(char *destino, size_t tamanho, GtkWidget *entry);
@@ -71,7 +74,6 @@ static void copiar_doencas(char *destino, size_t tamanho, FormData *form);
 static void selecionar_doencas(FormData *form, const char *valor);
 static void limpar_doencas(FormData *form);
 static void on_doenca_toggled(GtkCheckButton *button, gpointer data);
-static void filtrar_inteiro(GtkEditable *editable, gpointer data);
 static void filtrar_data(GtkEditable *editable, gpointer data);
 static void atualizar_idade(GtkEditable *editable, gpointer data);
 static void atualizar_tempo_restante(GtkWidget *widget, gpointer data);
@@ -360,10 +362,6 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
         GTK_EDITABLE(form->entry_imagem),
         FALSE);
 
-    gtk_entry_set_placeholder_text(
-        GTK_ENTRY(form->entry_imagem),
-        "Nenhuma imagem selecionada");
-
     gtk_image_set_pixel_size(
         GTK_IMAGE(form->preview_imagem),
         120);
@@ -390,12 +388,12 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
         "photo-preview");
 
     gtk_widget_set_hexpand(
-        form->entry_imagem,
+        box_imagem,
         TRUE);
 
     gtk_box_append(
         GTK_BOX(linha_imagem),
-        form->entry_imagem);
+        criar_campo_com_contador(form->entry_imagem, sizeof(((Pessoa *)0)->imagem) - 1));
 
     gtk_box_append(
         GTK_BOX(linha_imagem),
@@ -425,25 +423,9 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
         G_CALLBACK(abrir_camera),
         form);
 
-    gtk_entry_set_placeholder_text(
-        GTK_ENTRY(form->entry_nome),
-        "Nome completo");
-
-    gtk_entry_set_placeholder_text(
-        GTK_ENTRY(form->entry_apelido),
-        "Apelido");
-
-    gtk_entry_set_placeholder_text(
-        GTK_ENTRY(form->entry_nacionalidade),
-        "Nacionalidade");
-
     gtk_drop_down_set_selected(
         GTK_DROP_DOWN(form->entry_genero),
         0);
-
-    gtk_entry_set_placeholder_text(
-        GTK_ENTRY(form->entry_data_nascimento),
-        "00/00/0000");
 
     gtk_entry_set_input_purpose(
         GTK_ENTRY(form->entry_data_nascimento),
@@ -482,35 +464,42 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
         "heading");
 
 // Macro auxiliar para adicionar campos ao grid
-#define ADD_FIELD(grid, texto, widget, linha)          \
-    {                                                  \
-        GtkWidget *label = gtk_label_new(texto);       \
-                                                       \
-        gtk_label_set_xalign(GTK_LABEL(label), 0);     \
-                                                       \
-        gtk_widget_set_halign(label, GTK_ALIGN_START); \
-                                                       \
-        gtk_grid_attach(GTK_GRID(grid),                \
-                        label,                         \
-                        0, linha, 1, 1);               \
-                                                       \
-        gtk_widget_set_hexpand(widget, TRUE);          \
-                                                       \
-        gtk_grid_attach(GTK_GRID(grid),                \
-                        widget,                        \
-                        1, linha, 1, 1);               \
+#define ADD_FIELD(grid, texto, widget, linha)              \
+    {                                                      \
+        GtkWidget *label = gtk_label_new(texto);           \
+        GtkWidget *field_widget = (widget);                \
+                                                           \
+        gtk_label_set_xalign(GTK_LABEL(label), 0);         \
+                                                           \
+        gtk_widget_set_halign(label, GTK_ALIGN_START);     \
+        gtk_widget_set_valign(label, GTK_ALIGN_START);     \
+        gtk_widget_set_margin_top(label, 9);               \
+                                                           \
+        gtk_grid_attach(GTK_GRID(grid),                    \
+                        label,                             \
+                        0, linha, 1, 1);                   \
+                                                           \
+        gtk_widget_set_hexpand(field_widget, TRUE);        \
+                                                           \
+        gtk_grid_attach(GTK_GRID(grid),                    \
+                        field_widget,                      \
+                        1, linha, 1, 1);                   \
     }
 
     // Adiciona campos ao grid
-    ADD_FIELD(grid_pessoal, "Nome", form->entry_nome, 0);
-    ADD_FIELD(grid_pessoal, "Apelido", form->entry_apelido, 1);
+    ADD_FIELD(grid_pessoal, "Nome",
+              criar_campo_com_contador(form->entry_nome, sizeof(((Pessoa *)0)->nome) - 1), 0);
+    ADD_FIELD(grid_pessoal, "Apelido",
+              criar_campo_com_contador(form->entry_apelido, sizeof(((Pessoa *)0)->apelido) - 1), 1);
     ADD_FIELD(grid_pessoal, "Série", serie_label, 2);
-    ADD_FIELD(grid_pessoal, "Idade", form->entry_idade, 3);
-    ADD_FIELD(grid_pessoal, "Nacionalidade", form->entry_nacionalidade, 4);
-    ADD_FIELD(grid_pessoal, "Gênero", form->entry_genero, 5);
-    ADD_FIELD(grid_pessoal, "Altura", form->entry_altura, 6);
-    ADD_FIELD(grid_pessoal, "Peso", form->entry_peso, 7);
-    ADD_FIELD(grid_pessoal, "Nascimento", form->entry_data_nascimento, 8);
+    ADD_FIELD(grid_pessoal, "Nascimento",
+              criar_campo_com_contador(form->entry_data_nascimento, 10), 3);
+    ADD_FIELD(grid_pessoal, "Idade", form->entry_idade, 4);
+    ADD_FIELD(grid_pessoal, "Nacionalidade",
+              criar_campo_com_contador(form->entry_nacionalidade, sizeof(((Pessoa *)0)->nacionalidade) - 1), 5);
+    ADD_FIELD(grid_pessoal, "Gênero", form->entry_genero, 6);
+    ADD_FIELD(grid_pessoal, "Altura", form->entry_altura, 7);
+    ADD_FIELD(grid_pessoal, "Peso", form->entry_peso, 8);
     ADD_FIELD(grid_pessoal, "Imagem", box_imagem, 9);
 
     // ------------------------------------------------------------
@@ -554,7 +543,7 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
     form->entry_comportamento = gtk_drop_down_new_from_strings(COMPORTAMENTOS);
     form->entry_regime = gtk_drop_down_new_from_strings(REGIMES);
     form->entry_data_prisao = gtk_entry_new();
-    form->entry_tempo_restante = gtk_entry_new();
+    form->entry_tempo_restante = gtk_label_new("Calculado automaticamente");
     form->check_isolamento = gtk_check_button_new();
     form->check_risco_fuga = gtk_check_button_new();
 
@@ -562,17 +551,17 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
         GTK_ENTRY(form->entry_data_prisao),
         GTK_INPUT_PURPOSE_DIGITS);
 
-    gtk_entry_set_input_purpose(
-        GTK_ENTRY(form->entry_tempo_restante),
-        GTK_INPUT_PURPOSE_DIGITS);
+    gtk_label_set_xalign(
+        GTK_LABEL(form->entry_tempo_restante),
+        0.0);
 
-    gtk_editable_set_editable(
-        GTK_EDITABLE(form->entry_tempo_restante),
-        FALSE);
+    gtk_widget_set_halign(
+        form->entry_tempo_restante,
+        GTK_ALIGN_START);
 
-    gtk_entry_set_placeholder_text(
-        GTK_ENTRY(form->entry_tempo_restante),
-        "Calculado automaticamente");
+    gtk_widget_add_css_class(
+        form->entry_tempo_restante,
+        "computed-value");
 
     gtk_entry_set_max_length(
         GTK_ENTRY(form->entry_data_prisao),
@@ -581,15 +570,17 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
     g_signal_connect(form->entry_pena, "value-changed", G_CALLBACK(atualizar_tempo_restante), form);
     g_signal_connect(form->entry_data_prisao, "changed", G_CALLBACK(filtrar_data), NULL);
     g_signal_connect(form->entry_data_prisao, "changed", G_CALLBACK(atualizar_tempo_restante), form);
-    g_signal_connect(form->entry_tempo_restante, "changed", G_CALLBACK(filtrar_inteiro), NULL);
 
-    ADD_FIELD(grid_prisional, "Crime", form->entry_crime, 0);
+    ADD_FIELD(grid_prisional, "Crime",
+              criar_campo_com_contador(form->entry_crime, sizeof(((Pessoa *)0)->crime) - 1), 0);
     ADD_FIELD(grid_prisional, "Pena", form->entry_pena, 1);
-    ADD_FIELD(grid_prisional, "Cela", form->entry_cela, 2);
+    ADD_FIELD(grid_prisional, "Cela",
+              criar_campo_com_contador(form->entry_cela, sizeof(((Pessoa *)0)->cela) - 1), 2);
     ADD_FIELD(grid_prisional, "Periculosidade", form->entry_perigo, 3);
     ADD_FIELD(grid_prisional, "Comportamento", form->entry_comportamento, 4);
     ADD_FIELD(grid_prisional, "Regime", form->entry_regime, 5);
-    ADD_FIELD(grid_prisional, "Data Prisão", form->entry_data_prisao, 6);
+    ADD_FIELD(grid_prisional, "Data Prisão",
+              criar_campo_com_contador(form->entry_data_prisao, 10), 6);
     ADD_FIELD(grid_prisional, "Tempo Restante", form->entry_tempo_restante, 7);
     ADD_FIELD(grid_prisional, "Isolamento", form->check_isolamento, 8);
     ADD_FIELD(grid_prisional, "Risco de Fuga", form->check_risco_fuga, 9);
@@ -637,9 +628,12 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
     form->entry_medicacao =
         gtk_entry_new();
 
-    ADD_FIELD(grid_saude, "Saúde", form->entry_saude, 0);
-    ADD_FIELD(grid_saude, "Psicológico", form->entry_psicologico, 1);
-    ADD_FIELD(grid_saude, "Medicação", form->entry_medicacao, 2);
+    ADD_FIELD(grid_saude, "Saúde",
+              criar_campo_com_contador(form->entry_saude, sizeof(((Pessoa *)0)->saude) - 1), 0);
+    ADD_FIELD(grid_saude, "Psicológico",
+              criar_campo_com_contador(form->entry_psicologico, sizeof(((Pessoa *)0)->psicologico) - 1), 1);
+    ADD_FIELD(grid_saude, "Medicação",
+              criar_campo_com_contador(form->entry_medicacao, sizeof(((Pessoa *)0)->medicacao) - 1), 2);
     ADD_FIELD(grid_saude, "Doenças", criar_checklist_doencas(form), 3);
 
     // ------------------------------------------------------------
@@ -692,16 +686,16 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
               form->entry_tentativas_fuga, 0);
 
     ADD_FIELD(grid_seg, "Alerta",
-              form->entry_alerta, 1);
+              criar_campo_com_contador(form->entry_alerta, sizeof(((Pessoa *)0)->alerta) - 1), 1);
 
     ADD_FIELD(grid_seg,
               "Histórico Violência",
-              form->entry_historico_violencia,
+              criar_campo_com_contador(form->entry_historico_violencia, sizeof(((Pessoa *)0)->historico_violencia) - 1),
               2);
 
     ADD_FIELD(grid_seg,
               "Última Ocorrência",
-              form->entry_ultima_ocorrencia,
+              criar_campo_com_contador(form->entry_ultima_ocorrencia, sizeof(((Pessoa *)0)->ultima_ocorrencia) - 1),
               3);
 
     // ------------------------------------------------------------
@@ -759,6 +753,7 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
     if (!form->modo_edicao)
     {
         state->form_adicionar = form;
+        preparar_formulario_criacao(form);
     }
     else if (form->item_editando)
     {
@@ -855,8 +850,8 @@ static void abrir_janela_adicionar_helper(AppState *state, gboolean modo_edicao,
             "%d",
             calcular_tempo_restante(p->pena_anos, p->data_prisao));
 
-        gtk_editable_set_text(
-            GTK_EDITABLE(form->entry_tempo_restante),
+        gtk_label_set_text(
+            GTK_LABEL(form->entry_tempo_restante),
             buf);
 
         gtk_check_button_set_active(
@@ -924,6 +919,88 @@ static void copiar_texto(char *destino, size_t tamanho, GtkWidget *entry)
     destino[tamanho - 1] = '\0';
 }
 
+static GtkWidget *criar_campo_com_contador(GtkWidget *entry, int maximo)
+{
+    GtkWidget *box =
+        gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+
+    GtkWidget *contador =
+        gtk_label_new(NULL);
+
+    gtk_entry_set_max_length(
+        GTK_ENTRY(entry),
+        maximo);
+
+    gtk_widget_set_hexpand(entry, TRUE);
+    gtk_widget_set_hexpand(box, TRUE);
+
+    gtk_label_set_xalign(
+        GTK_LABEL(contador),
+        1.0);
+
+    gtk_widget_set_halign(
+        contador,
+        GTK_ALIGN_END);
+
+    gtk_widget_add_css_class(
+        contador,
+        "char-counter");
+
+    g_object_set_data(
+        G_OBJECT(contador),
+        "maximo",
+        GINT_TO_POINTER(maximo));
+
+    g_signal_connect(
+        entry,
+        "changed",
+        G_CALLBACK(atualizar_contador_campo),
+        contador);
+
+    gtk_box_append(
+        GTK_BOX(box),
+        entry);
+
+    gtk_box_append(
+        GTK_BOX(box),
+        contador);
+
+    atualizar_contador_campo(
+        GTK_EDITABLE(entry),
+        contador);
+
+    return box;
+}
+
+static void atualizar_contador_campo(GtkEditable *editable, gpointer data)
+{
+    GtkWidget *contador =
+        GTK_WIDGET(data);
+
+    int maximo =
+        GPOINTER_TO_INT(
+            g_object_get_data(G_OBJECT(contador), "maximo"));
+
+    const char *texto =
+        gtk_editable_get_text(editable);
+
+    glong atual =
+        g_utf8_strlen(texto ? texto : "", -1);
+
+    char resumo[64];
+
+    snprintf(
+        resumo,
+        sizeof(resumo),
+        "%ld/%d caracteres",
+        atual,
+        maximo);
+
+    gtk_label_set_text(
+        GTK_LABEL(contador),
+        resumo);
+}
+
 static void atualizar_preview_imagem(FormData *form)
 {
     const char *caminho =
@@ -979,6 +1056,28 @@ static void escolher_imagem(GtkButton *button, gpointer data)
     gtk_file_chooser_add_filter(
         GTK_FILE_CHOOSER(dialog),
         filter);
+
+    g_mkdir_with_parents("fotos", 0755);
+
+    GFile *pasta_fotos =
+        g_file_new_for_path("fotos");
+
+    GError *erro_pasta = NULL;
+
+    if (!gtk_file_chooser_set_current_folder(
+            GTK_FILE_CHOOSER(dialog),
+            pasta_fotos,
+            &erro_pasta))
+    {
+        g_warning(
+            "Nao foi possivel abrir a pasta fotos: %s",
+            erro_pasta ? erro_pasta->message : "erro desconhecido");
+
+        if (erro_pasta)
+            g_error_free(erro_pasta);
+    }
+
+    g_object_unref(pasta_fotos);
 
     g_signal_connect(
         dialog,
@@ -1293,26 +1392,6 @@ static void atualizar_texto_filtrado(GtkEditable *editable, const char *texto)
     gtk_editable_set_text(editable, texto);
 }
 
-static void filtrar_inteiro(GtkEditable *editable, gpointer data)
-{
-    (void)data;
-
-    const char *texto = gtk_editable_get_text(editable);
-    char filtrado[64];
-    size_t pos = 0;
-
-    for (size_t i = 0; texto[i] != '\0' && pos < sizeof(filtrado) - 1; i++)
-    {
-        if (g_ascii_isdigit(texto[i]))
-            filtrado[pos++] = texto[i];
-    }
-
-    filtrado[pos] = '\0';
-
-    if (strcmp(texto, filtrado) != 0)
-        atualizar_texto_filtrado(editable, filtrado);
-}
-
 static void filtrar_data(GtkEditable *editable, gpointer data)
 {
     (void)data;
@@ -1450,8 +1529,8 @@ static void atualizar_tempo_restante(GtkWidget *widget, gpointer data)
         "%d",
         calcular_tempo_restante(pena_anos, data_prisao));
 
-    atualizar_texto_filtrado(
-        GTK_EDITABLE(form->entry_tempo_restante),
+    gtk_label_set_text(
+        GTK_LABEL(form->entry_tempo_restante),
         buffer);
 }
 
@@ -1922,6 +2001,7 @@ static void salvar_pessoa(GtkWidget *widget, gpointer data)
 
     ItemLista *item = criar_item_lista(state, nova);
     state->items = g_list_insert_sorted(state->items, item, comparar);
+    sincronizar_ordem_lista(state);
 
     // ------------------------------------------------------------
     // FECHAR JANELA CORRETAMENTE
@@ -1981,6 +2061,7 @@ static gboolean on_window_close_request(GtkWindow *window, gpointer data)
     {
         reset_form(form);
         gtk_widget_set_visible(GTK_WIDGET(window), FALSE);
+        apresentar_janela_principal(form);
         return TRUE;
     }
 
@@ -2060,8 +2141,9 @@ static void reset_form(FormData *form)
     gtk_editable_set_text(
         GTK_EDITABLE(form->entry_data_prisao), "");
 
-    gtk_editable_set_text(
-        GTK_EDITABLE(form->entry_tempo_restante), "");
+    gtk_label_set_text(
+        GTK_LABEL(form->entry_tempo_restante),
+        "Calculado automaticamente");
 
     gtk_check_button_set_active(
         GTK_CHECK_BUTTON(form->check_isolamento),
@@ -2144,8 +2226,7 @@ static void reordenar_item_editado(AppState *state, ItemLista *item)
     state->items =
         g_list_insert_sorted(state->items, item, comparar);
 
-    gtk_list_box_invalidate_sort(
-        GTK_LIST_BOX(state->list));
+    sincronizar_ordem_lista(state);
 }
 // ------------------------------------------------------------
 

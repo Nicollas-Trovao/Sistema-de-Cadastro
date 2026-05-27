@@ -29,8 +29,14 @@
 }
 
 .dim-label,
-.caption {
+.caption,
+.char-counter {
     color: #667085;
+}
+
+.computed-value {
+    color: #2f3437;
+    padding-top: 9px;
 }
 
 .search-entry {

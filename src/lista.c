@@ -72,6 +72,40 @@ static void atualizar_selecao_visual(AppState *state, ItemLista *novo_item)
     }
 }
 
+static int comparar_texto(const char *a, const char *b)
+{
+    char *a_normalizado =
+        g_utf8_casefold(a ? a : "", -1);
+
+    char *b_normalizado =
+        g_utf8_casefold(b ? b : "", -1);
+
+    int resultado =
+        g_utf8_collate(a_normalizado, b_normalizado);
+
+    g_free(a_normalizado);
+    g_free(b_normalizado);
+
+    return resultado;
+}
+
+static int obter_posicao_ordenada(AppState *state, ItemLista *novo_item)
+{
+    int posicao = 0;
+
+    for (GList *l = state->items; l != NULL; l = l->next)
+    {
+        ItemLista *item = l->data;
+
+        if (comparar(novo_item, item) < 0)
+            return posicao;
+
+        posicao++;
+    }
+
+    return posicao;
+}
+
 static void atualizar_label_formatado(GtkWidget *label, const char *formato, ...)
 {
     char buffer[1024];
@@ -132,7 +166,11 @@ ItemLista *criar_item_lista(AppState *state, Pessoa *pessoa)
 
     item->button = button;
 
-    gtk_list_box_append(GTK_LIST_BOX(state->list), button);
+    gtk_list_box_insert(
+        GTK_LIST_BOX(state->list),
+        button,
+        obter_posicao_ordenada(state, item));
+
     g_signal_connect(button, "clicked", G_CALLBACK(item_clicado), item);
 
     return item;
@@ -289,27 +327,48 @@ int comparar(const void *a, const void *b)
     ItemLista *i1 = (ItemLista *)a;
     ItemLista *i2 = (ItemLista *)b;
 
-    return strcmp(i1->pessoa->nome,
-                  i2->pessoa->nome);
+    return comparar_texto(
+        i1 && i1->pessoa ? i1->pessoa->nome : "",
+        i2 && i2->pessoa ? i2->pessoa->nome : "");
 }
 
-int ordenar_listbox(GtkListBoxRow *row1, GtkListBoxRow *row2, gpointer data)
+void sincronizar_ordem_lista(AppState *state)
 {
-    (void)data;
+    if (!state || !state->list)
+        return;
 
-    GtkWidget *b1 =
-        gtk_list_box_row_get_child(row1);
+    int posicao = 0;
 
-    GtkWidget *b2 =
-        gtk_list_box_row_get_child(row2);
+    for (GList *l = state->items; l != NULL; l = l->next)
+    {
+        ItemLista *item = l->data;
 
-    const char *t1 =
-        gtk_button_get_label(GTK_BUTTON(b1));
+        if (!item || !item->button)
+            continue;
 
-    const char *t2 =
-        gtk_button_get_label(GTK_BUTTON(b2));
+        GtkWidget *row =
+            gtk_widget_get_ancestor(
+                item->button,
+                GTK_TYPE_LIST_BOX_ROW);
 
-    return strcmp(t1, t2);
+        if (!row)
+            continue;
+
+        g_object_ref(item->button);
+
+        gtk_list_box_remove(
+            GTK_LIST_BOX(state->list),
+            row);
+
+        gtk_list_box_insert(
+            GTK_LIST_BOX(state->list),
+            item->button,
+            posicao);
+
+        g_object_unref(item->button);
+
+        posicao++;
+    }
 }
 
 void item_clicado(GtkWidget *widget, gpointer data)

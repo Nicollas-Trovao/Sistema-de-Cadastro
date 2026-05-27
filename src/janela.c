@@ -94,12 +94,6 @@ GtkWidget *create_main_window(GtkApplication *app)
 
     state->list = list;
 
-    gtk_list_box_set_sort_func(
-        GTK_LIST_BOX(list),
-        ordenar_listbox,
-        NULL,
-        NULL);
-
     gtk_list_box_set_selection_mode(
         GTK_LIST_BOX(list),
         GTK_SELECTION_NONE);
